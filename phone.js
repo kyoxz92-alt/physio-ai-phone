@@ -473,6 +473,8 @@ var stopButton = must("#stop");
 var unpaired = must("#unpaired");
 var forgetButton = must("#forget");
 var newChatButton = must("#new-chat");
+var menuButton = must("#menu-btn");
+var menu = must("#menu");
 var usageLine = must("#usage");
 var modeOptions = [...document.querySelectorAll("#mode-seg .mode-opt")];
 var working = false;
@@ -480,6 +482,7 @@ var sending = false;
 var paired = true;
 var status = "connecting";
 var mode = "manual";
+var process = null;
 var steps = /* @__PURE__ */ new Map();
 var boxes = /* @__PURE__ */ new Map();
 function loadPairing() {
@@ -561,23 +564,58 @@ function setMode(next) {
   mode = next;
   for (const option of modeOptions) option.setAttribute("aria-checked", String(option.dataset.mode === next));
 }
+function ensureProcess() {
+  if (process) return process;
+  const details = el("details", "process");
+  const summary = el("summary");
+  const label = el("span", "process-label", "Working");
+  const latest = el("span", "process-latest");
+  const chevron = el("span", "process-chev", "\u203A");
+  chevron.setAttribute("aria-hidden", "true");
+  const dot = el("span", "process-dot");
+  dot.setAttribute("aria-hidden", "true");
+  summary.append(dot, label, latest, chevron);
+  const list = el("div", "process-rows");
+  details.append(summary, list);
+  process = { details, label, latest, list, rows: [], total: 0, lastLabel: "", failed: false };
+  append(details);
+  return process;
+}
+function refreshProcess() {
+  if (!process) return;
+  const finished = !working;
+  process.details.classList.toggle("done", finished && !process.failed);
+  process.details.classList.toggle("issue", finished && process.failed);
+  process.label.textContent = finished ? process.failed ? "Finished with an issue" : "Done" : "Working";
+  process.latest.textContent = finished ? `\xB7 ${process.total} step${process.total === 1 ? "" : "s"}` : process.lastLabel ? `\xB7 ${process.lastLabel}` : "";
+}
 function setWorking(on) {
   working = on;
   renderConn();
+  refreshProcess();
 }
 function resetFeed() {
   for (const child of [...feed.children]) if (child !== intro) child.remove();
+  process = null;
   steps.clear();
   boxes.clear();
   intro.hidden = false;
 }
+var CARD_ICONS = {
+  screen: '<path d="M4 6h8M4 12h5M4 18h8"/><circle cx="17" cy="14" r="3"/><path d="m21 18-1.8-1.8"/>',
+  fu: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  new: '<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M18 8v6M15 11h6"/>',
+  read: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M14 3v5h5l-5-5z"/><circle cx="16" cy="17" r="3"/><path d="m21 21-2.2-2.2"/>'
+};
+var GENERIC_ICON = '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>';
 function renderCards(list) {
   cards.replaceChildren();
   for (const item of list) {
     const fillsComposer = item.prompt.endsWith(" ");
     const card = el("button", "card");
     card.type = "button";
-    const icon = el("span", "card-icon", fillsComposer ? "\u270E" : "\u2192");
+    const icon = el("span", "card-icon");
+    icon.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${CARD_ICONS[item.id ?? ""] ?? GENERIC_ICON}</svg>`;
     icon.setAttribute("aria-hidden", "true");
     const copy = el("span", "card-copy");
     copy.append(el("b", "", item.title), el("small", "", item.prompt.trim().slice(0, 100)));
@@ -698,6 +736,11 @@ function approvalBox(event) {
   box.append(buttons);
   return box;
 }
+function fitNotes(notes) {
+  notes.style.height = "auto";
+  const limit = Math.round(window.innerHeight * 0.5);
+  notes.style.height = `${Math.min(notes.scrollHeight + 2, limit)}px`;
+}
 function handleEvent(event) {
   switch (event.k) {
     case "hello":
@@ -725,20 +768,38 @@ function handleEvent(event) {
       usageLine.textContent = event.text;
       return;
     case "user":
+      process = null;
       append(el("div", "me", event.text));
       return;
     case "assistant": {
       const say = el("div", "say");
       renderMarkdown(say, event.text);
+      const answer2 = el("div", "answer");
       if (event.text.length > 1400 || event.text.split("\n").length > 24) {
         const details = el("details", "fold reply-fold");
         const body = el("div", "fold-body");
         body.append(say);
         details.append(el("summary", "", "Show full reply"), body);
-        append(details);
+        answer2.append(details);
       } else {
-        append(say);
+        answer2.append(say);
       }
+      const copy = el("button", "copy", "Copy");
+      copy.type = "button";
+      copy.setAttribute("aria-label", "Copy this reply");
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(event.text);
+          copy.textContent = "Copied";
+        } catch {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(() => {
+          copy.textContent = "Copy";
+        }, 1500);
+      });
+      answer2.append(copy);
+      append(answer2);
       return;
     }
     case "note":
@@ -748,18 +809,31 @@ function handleEvent(event) {
       append(el("div", "error", event.text));
       return;
     case "step": {
+      const block = ensureProcess();
       let row = steps.get(event.id);
       if (!row) {
-        row = el("div", "step");
-        row.append(el("span", "step-label"));
+        const last = block.rows.at(-1);
+        if (last && last.dataset.label === event.label) {
+          row = last;
+          row.dataset.count = String(Number(row.dataset.count) + 1);
+        } else {
+          row = el("div", "process-row");
+          row.dataset.label = event.label;
+          row.dataset.count = "1";
+          row.append(el("span", "process-text"), el("span", "times"));
+          block.rows.push(row);
+          block.list.append(row);
+        }
         steps.set(event.id, row);
-        append(row);
+        block.total++;
       }
-      row.querySelector(".step-label").textContent = event.label;
-      row.classList.toggle("done", event.state === "done");
+      const count = Number(row.dataset.count);
+      row.querySelector(".process-text").textContent = event.label;
+      row.querySelector(".times").textContent = count > 1 ? `\xD7${count}` : "";
       row.classList.toggle("fail", event.state === "fail");
-      row.classList.toggle("compact", event.state !== "run");
-      row.setAttribute("aria-label", `${event.label}: ${event.state === "run" ? "working" : event.state === "done" ? "done" : "failed"}`);
+      block.lastLabel = event.label;
+      if (event.state === "fail") block.failed = true;
+      refreshProcess();
       return;
     }
     case "plan": {
@@ -767,6 +841,11 @@ function handleEvent(event) {
       const box = planBox(event);
       boxes.set(event.id, box);
       append(box);
+      const notes = box.querySelector(".notes");
+      if (notes) {
+        fitNotes(notes);
+        notes.addEventListener("input", () => fitNotes(notes));
+      }
       updateComposer();
       return;
     }
@@ -821,12 +900,36 @@ for (const option of modeOptions) {
     void command({ k: "mode", mode: next });
   });
 }
+function closeMenu() {
+  menu.hidden = true;
+  menuButton.setAttribute("aria-expanded", "false");
+}
+menuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const opening = menu.hidden;
+  menu.hidden = !opening;
+  menuButton.setAttribute("aria-expanded", String(opening));
+  if (opening) updateComposer();
+});
+document.addEventListener("click", (event) => {
+  if (menu.hidden) return;
+  const target = event.target;
+  if (!menu.contains(target) && !menuButton.contains(target)) closeMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !menu.hidden) {
+    closeMenu();
+    menuButton.focus();
+  }
+});
 newChatButton.addEventListener("click", () => {
+  closeMenu();
   if (working || !canUseLink()) return;
   if (!confirm("Start a new conversation? This clears the conversation on the PC too.")) return;
   void command({ k: "new" });
 });
 forgetButton.addEventListener("click", () => {
+  closeMenu();
   if (!confirm("Forget this PC? You will need to scan its QR code again.")) return;
   let cleared = true;
   try {
@@ -852,8 +955,7 @@ async function main() {
     renderConn();
     return;
   }
-  forgetButton.hidden = false;
-  newChatButton.hidden = false;
+  menuButton.hidden = false;
   channel = new RelayChannel(
     pairing,
     "phone",

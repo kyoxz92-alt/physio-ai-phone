@@ -386,3 +386,40 @@ summary:focus-visible {
 .mode-opt:disabled { opacity: 0.5; }
 .mode-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .usage { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Header menu (New conversation, Forget this PC). */
+.top { position: relative; }
+.menu-btn { flex: 0 0 44px; min-width: 44px; min-height: 44px; margin: -8px -10px -8px 0; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--muted); cursor: pointer; }
+.menu-btn:active { background: var(--bg-soft); }
+.menu-btn:focus-visible, .menu-item:focus-visible, .copy:focus-visible, .process > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.menu { position: absolute; z-index: 30; top: calc(100% - 4px); right: max(12px, env(safe-area-inset-right)); min-width: 236px; padding: 6px; border: 1px solid var(--border); border-radius: 14px; background: var(--raised); box-shadow: var(--shadow); }
+.menu-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.menu-item:active:not(:disabled) { background: var(--bg-soft); }
+.menu-item:disabled { opacity: 0.4; cursor: default; }
+.menu-item.danger { color: var(--danger); }
+
+/* Steps fold into one line per task, like the extension's "Worked" line. */
+.process { align-self: stretch; }
+.process > summary { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 2px; color: var(--muted); font-size: 13px; list-style: none; cursor: pointer; user-select: none; }
+.process > summary::-webkit-details-marker { display: none; }
+.process-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--teal); animation: pulse 1.1s ease-in-out infinite; }
+.process.done .process-dot { width: auto; height: auto; border-radius: 0; background: none; color: var(--teal-text); font-weight: 700; line-height: 1; animation: none; }
+.process.done .process-dot::before { content: "✓"; }
+.process.issue .process-dot { color: var(--danger); }
+.process.issue .process-dot::before { content: "!"; }
+.process-label { flex: none; color: var(--text); font-weight: 600; }
+.process-latest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.process-chev { margin-left: auto; flex: none; opacity: 0.5; transition: transform 160ms ease; }
+.process[open] .process-chev { transform: rotate(90deg); }
+.process-rows { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px 4px; padding-left: 12px; border-left: 2px solid var(--border); }
+.process-row { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.process-row.fail { color: var(--danger); }
+.process-row .times { margin-left: 6px; opacity: 0.7; }
+
+/* Copy under each answer. */
+.answer { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.copy { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.copy:active { background: var(--bg-soft); }
+
+/* Card pictograms match the extension's. */
+.card-icon svg { display: block; }
