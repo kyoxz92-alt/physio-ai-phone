@@ -149,8 +149,292 @@ var RelayChannel = class {
   }
 };
 
+// src/sidepanel/markdown.ts
+var FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+.-]*)\s*$/;
+var HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+var RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+var QUOTE = /^ {0,3}>/;
+var LIST_ITEM = /^ {0,3}([-*+]|\d{1,3}[.)])\s+(.*)$/;
+var TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+function parseMarkdown(source) {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const fence = FENCE.exec(line);
+    if (fence) {
+      const marker = fence[1][0];
+      const close = new RegExp(`^ {0,3}${marker}{3,}\\s*$`);
+      const body = [];
+      i++;
+      while (i < lines.length && !close.test(lines[i])) {
+        body.push(lines[i]);
+        i++;
+      }
+      i++;
+      blocks.push({ type: "code", language: fence[2] ?? "", text: body.join("\n") });
+      continue;
+    }
+    const heading = HEADING.exec(line);
+    if (heading) {
+      blocks.push({ type: "heading", level: heading[1].length, text: heading[2] });
+      i++;
+      continue;
+    }
+    if (RULE.test(line)) {
+      blocks.push({ type: "rule" });
+      i++;
+      continue;
+    }
+    if (line.includes("|") && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1])) {
+      const header = splitRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      blocks.push({ type: "table", header, rows });
+      continue;
+    }
+    if (QUOTE.test(line)) {
+      const quote = [];
+      while (i < lines.length && QUOTE.test(lines[i])) {
+        quote.push(lines[i].replace(/^ {0,3}> ?/, ""));
+        i++;
+      }
+      blocks.push({ type: "quote", text: quote.join("\n") });
+      continue;
+    }
+    const item = LIST_ITEM.exec(line);
+    if (item) {
+      const ordered = /^\d/.test(item[1]);
+      const items = [];
+      while (i < lines.length) {
+        const next = LIST_ITEM.exec(lines[i]);
+        if (next) {
+          if (/^\d/.test(next[1]) !== ordered) break;
+          items.push(next[2]);
+          i++;
+          continue;
+        }
+        if (items.length > 0 && lines[i].trim() && /^\s{2,}/.test(lines[i]) && !isBlockStart(lines[i])) {
+          items[items.length - 1] += ` ${lines[i].trim()}`;
+          i++;
+          continue;
+        }
+        break;
+      }
+      blocks.push({ type: "list", ordered, items });
+      continue;
+    }
+    const paragraph = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) {
+      if (lines[i].includes("|") && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1])) break;
+      paragraph.push(lines[i]);
+      i++;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join("\n") });
+  }
+  return blocks;
+}
+function isBlockStart(line) {
+  return FENCE.test(line) || HEADING.test(line) || RULE.test(line) || QUOTE.test(line) || LIST_ITEM.test(line);
+}
+function splitRow(line) {
+  let text = line.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+function parseInline(text) {
+  const out = [];
+  let buffer = "";
+  let i = 0;
+  const flush = () => {
+    if (buffer) {
+      out.push({ type: "text", text: buffer });
+      buffer = "";
+    }
+  };
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "`") {
+      const end = text.indexOf("`", i + 1);
+      if (end > i + 1) {
+        flush();
+        out.push({ type: "code", text: text.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
+    if (ch === "*" && text[i + 1] === "*") {
+      const end = text.indexOf("**", i + 2);
+      if (end > i + 2) {
+        flush();
+        out.push({ type: "strong", children: parseInline(text.slice(i + 2, end)) });
+        i = end + 2;
+        continue;
+      }
+    }
+    if (ch === "*") {
+      const end = text.indexOf("*", i + 1);
+      if (end > i + 1) {
+        flush();
+        out.push({ type: "em", children: parseInline(text.slice(i + 1, end)) });
+        i = end + 1;
+        continue;
+      }
+    }
+    if (ch === "[") {
+      const close = text.indexOf("]", i + 1);
+      if (close > i && text[close + 1] === "(") {
+        const paren = text.indexOf(")", close + 2);
+        if (paren > close + 1) {
+          flush();
+          const label = text.slice(i + 1, close);
+          const href = safeHref(text.slice(close + 2, paren).trim());
+          if (href) out.push({ type: "link", href, children: parseInline(label) });
+          else out.push({ type: "text", text: label });
+          i = paren + 1;
+          continue;
+        }
+      }
+    }
+    if (ch === "\n") {
+      flush();
+      out.push({ type: "break" });
+      i++;
+      continue;
+    }
+    buffer += ch;
+    i++;
+  }
+  flush();
+  return out;
+}
+function safeHref(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+function renderMarkdown(container, source) {
+  container.replaceChildren(...parseMarkdown(source).map(renderBlock));
+}
+function renderBlock(block) {
+  switch (block.type) {
+    case "paragraph": {
+      const p = document.createElement("p");
+      appendInline(p, block.text);
+      return p;
+    }
+    case "heading": {
+      const level = Math.min(6, Math.max(1, block.level));
+      const node = document.createElement(`h${level}`);
+      appendInline(node, block.text);
+      return node;
+    }
+    case "code": {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      if (block.language) code.className = `language-${block.language}`;
+      code.textContent = block.text;
+      pre.append(code);
+      return pre;
+    }
+    case "list": {
+      const list = document.createElement(block.ordered ? "ol" : "ul");
+      for (const item of block.items) {
+        const li = document.createElement("li");
+        appendInline(li, item);
+        list.append(li);
+      }
+      return list;
+    }
+    case "quote": {
+      const quote = document.createElement("blockquote");
+      appendInline(quote, block.text);
+      return quote;
+    }
+    case "rule":
+      return document.createElement("hr");
+    case "table": {
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const cell of block.header) {
+        const th = document.createElement("th");
+        appendInline(th, cell);
+        headRow.append(th);
+      }
+      head.append(headRow);
+      table.append(head);
+      if (block.rows.length > 0) {
+        const body = document.createElement("tbody");
+        for (const cells of block.rows) {
+          const row = document.createElement("tr");
+          for (const cell of cells) {
+            const td = document.createElement("td");
+            appendInline(td, cell);
+            row.append(td);
+          }
+          body.append(row);
+        }
+        table.append(body);
+      }
+      return table;
+    }
+  }
+}
+function appendInline(parent, text) {
+  for (const node of renderInline(parseInline(text))) parent.append(node);
+}
+function renderInline(tokens) {
+  return tokens.map((token) => {
+    switch (token.type) {
+      case "text":
+        return document.createTextNode(token.text);
+      case "break":
+        return document.createElement("br");
+      case "code": {
+        const code = document.createElement("code");
+        code.textContent = token.text;
+        return code;
+      }
+      case "strong": {
+        const strong = document.createElement("strong");
+        strong.append(...renderInline(token.children));
+        return strong;
+      }
+      case "em": {
+        const em = document.createElement("em");
+        em.append(...renderInline(token.children));
+        return em;
+      }
+      case "link": {
+        const link = document.createElement("a");
+        link.href = token.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.append(...renderInline(token.children));
+        return link;
+      }
+    }
+  });
+}
+
 // src/phone/phone.ts
 var PAIRING_KEY = "physio-ai-pairing";
+var MAX_COMPOSER_HEIGHT = 160;
 function must(selector) {
   const found = document.querySelector(selector);
   if (!found) throw new Error(`Missing ${selector}`);
@@ -168,10 +452,14 @@ var siteLine = must("#site");
 var cards = must("#cards");
 var conn = must("#conn");
 var input = must("#input");
+var composer = must(".composer");
+var composerHint = must("#composer-hint");
 var sendButton = must("#send");
 var stopButton = must("#stop");
 var unpaired = must("#unpaired");
 var working = false;
+var sending = false;
+var paired = true;
 var status = "connecting";
 var steps = /* @__PURE__ */ new Map();
 var boxes = /* @__PURE__ */ new Map();
@@ -193,19 +481,54 @@ function loadPairing() {
     return null;
   }
 }
-function scrollDown() {
-  feed.scrollTop = feed.scrollHeight;
+function isNearBottom() {
+  return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 96;
 }
-function setWorking(on) {
-  working = on;
-  sendButton.hidden = on;
-  stopButton.hidden = !on;
-  renderConn();
+function append(node) {
+  const follow = isNearBottom() || !intro.hidden;
+  intro.hidden = true;
+  feed.append(node);
+  if (follow) feed.scrollTop = feed.scrollHeight;
+}
+function resizeComposer() {
+  input.style.height = "auto";
+  const maxHeight = Math.min(MAX_COMPOSER_HEIGHT, window.innerHeight * 0.32);
+  input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+}
+function canUseLink() {
+  return paired && status === "open";
+}
+function updateComposer() {
+  const online = canUseLink();
+  const sendable = online && !working && !sending && input.value.trim().length > 0;
+  sendButton.hidden = working;
+  sendButton.disabled = !sendable;
+  stopButton.hidden = !working;
+  stopButton.disabled = !online;
+  input.setAttribute("aria-disabled", String(!online));
+  composer.classList.toggle("offline", !online);
+  composer.classList.toggle("busy", online && working);
+  for (const card of cards.querySelectorAll("button")) card.disabled = !online || working;
+  updateCardStatus();
+  if (composerHint.classList.contains("send-error")) return;
+  composerHint.textContent = !online ? paired && status === "connecting" ? "Reconnecting\u2026 Your draft is kept." : "Offline \xB7 Your draft is kept. Try again when connected." : working ? "Working on your PC \xB7 Stop to interrupt" : "Enter to send \xB7 Shift + Enter for a new line";
+}
+function updateCardStatus() {
+  for (const box of boxes.values()) {
+    const pending = box.classList.contains("pending") || box.classList.contains("settled");
+    for (const button of box.querySelectorAll(".btn")) button.disabled = !canUseLink() || pending;
+  }
 }
 function renderConn() {
   conn.classList.toggle("on", status === "open");
   conn.classList.toggle("busy", status === "open" && working);
-  conn.textContent = status === "open" ? working ? "Working" : "PC connected" : status === "connecting" ? "Connecting\u2026" : "Offline";
+  conn.classList.toggle("offline", paired && status === "closed");
+  conn.textContent = !paired ? "Not paired" : status === "open" ? working ? "Working" : "PC connected" : status === "connecting" ? "Connecting\u2026" : "Offline";
+  updateComposer();
+}
+function setWorking(on) {
+  working = on;
+  renderConn();
 }
 function resetFeed() {
   for (const child of [...feed.children]) if (child !== intro) child.remove();
@@ -213,46 +536,91 @@ function resetFeed() {
   boxes.clear();
   intro.hidden = false;
 }
-function append(node) {
-  intro.hidden = true;
-  feed.append(node);
-  scrollDown();
-}
 function renderCards(list) {
   cards.replaceChildren();
   for (const item of list) {
+    const fillsComposer = item.prompt.endsWith(" ");
     const card = el("button", "card");
-    card.append(el("b", "", item.title), el("small", "", item.prompt.trim().slice(0, 70)));
+    card.type = "button";
+    const icon = el("span", "card-icon", fillsComposer ? "\u270E" : "\u2192");
+    icon.setAttribute("aria-hidden", "true");
+    const copy = el("span", "card-copy");
+    copy.append(el("b", "", item.title), el("small", "", item.prompt.trim().slice(0, 100)));
+    const arrow = el("span", "card-arrow", fillsComposer ? "\u21B5" : "\u203A");
+    arrow.setAttribute("aria-hidden", "true");
+    card.append(icon, copy, arrow);
+    card.setAttribute("aria-label", `${item.title}. ${fillsComposer ? "Fill message box" : "Send to PC"}`);
     card.addEventListener("click", () => {
-      if (item.prompt.endsWith(" ")) {
+      if (!canUseLink() || working) return;
+      if (fillsComposer) {
         input.value = item.prompt;
-        input.focus();
+        resizeComposer();
+        updateComposer();
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(input.value.length, input.value.length);
       } else {
         void command({ k: "send", text: item.prompt });
       }
     });
     cards.append(card);
   }
+  if (list.length === 0) cards.append(el("p", "start-note", "No shortcuts saved. Type a task below to get started."));
+  updateComposer();
+}
+function folded(text, summary = "Show full text", code = false) {
+  if (text.length < 700 && text.split("\n").length < 12) return el("div", code ? "detail" : "", text);
+  const details = el("details", "fold");
+  const body = el("div", "fold-body");
+  body.append(el("div", code ? "detail" : "", text));
+  details.append(el("summary", "", summary), body);
+  return details;
 }
 function settle(id, outcome) {
   const box = boxes.get(id);
   if (!box || box.classList.contains("settled")) return;
   box.classList.add("settled");
+  box.classList.remove("pending");
   box.querySelector(".btns")?.remove();
   const notes = box.querySelector(".notes");
   if (notes) notes.readOnly = true;
-  box.append(el("div", "outcome", outcome === "approved" ? "Approved" : "Cancelled"));
+  const message = box.querySelector(".pc-only")?.textContent;
+  box.querySelector(".pc-only")?.remove();
+  const outcomeText = outcome === "approved" ? "Approved" : "Cancelled";
+  const outcomeNode = el("div", `outcome${outcome === "cancelled" ? " cancelled" : ""}`, message ? `${outcomeText} \xB7 ${message}` : outcomeText);
+  box.append(outcomeNode);
+  if (box.contains(document.activeElement)) {
+    box.tabIndex = -1;
+    box.focus({ preventScroll: true });
+  }
+}
+function setCardPending(box, pending, text) {
+  box.classList.toggle("pending", pending);
+  for (const button of box.querySelectorAll(".btn")) button.disabled = pending || !canUseLink();
+  const hint = box.querySelector(".card-status") ?? el("div", "card-status note");
+  hint.textContent = text;
+  hint.setAttribute("role", "status");
+  if (!hint.isConnected) box.append(hint);
+}
+async function answer(box, message) {
+  if (box.classList.contains("pending") || box.classList.contains("settled")) return;
+  if (!canUseLink()) {
+    setCardPending(box, false, "Not connected. Your answer was not sent; try again.");
+    return;
+  }
+  setCardPending(box, true, "Sending to your PC\u2026");
+  const sent = await command(message);
+  if (!sent && !box.classList.contains("settled")) setCardPending(box, false, "Not sent. Check the connection and try again.");
 }
 function planBox(event) {
-  const box = el("div", "box");
-  const head = el("div", "box-head", event.title);
-  head.append(el("span", "tag", "Draft only"));
-  const notes = document.createElement("textarea");
-  notes.className = "notes";
+  const box = el("div", "box plan");
+  const head = el("div", "box-head");
+  head.append(el("span", "head-text", event.title), el("span", "tag", "Draft only"));
+  const notes = el("textarea", "notes");
   notes.value = event.notes;
-  box.append(head, el("div", "label", "Text to write (tap to edit)"), notes);
+  notes.setAttribute("aria-label", "Plan text to write");
+  box.append(head, el("div", "label", "Text to write \xB7 review and edit"), notes);
   if (event.assumed.length > 0) {
-    box.append(el("div", "label", "Assumed: check these"));
+    box.append(el("div", "label", "Assumed \xB7 check these"));
     const chips = el("div", "chips");
     for (const item of event.assumed) chips.append(el("span", "chip", item));
     box.append(chips);
@@ -260,40 +628,49 @@ function planBox(event) {
   const buttons = el("div", "btns");
   const approve = el("button", "btn primary", "Approve plan");
   const cancel = el("button", "btn", "Cancel");
+  approve.type = cancel.type = "button";
   approve.addEventListener("click", () => {
-    if (!notes.value.trim()) return;
-    void command({ k: "plan", id: event.id, approved: true, notes: notes.value.trim() });
+    if (!notes.value.trim()) {
+      setCardPending(box, false, "Add plan text before approving.");
+      notes.focus();
+      return;
+    }
+    void answer(box, { k: "plan", id: event.id, approved: true, notes: notes.value.trim() });
   });
-  cancel.addEventListener("click", () => void command({ k: "plan", id: event.id, approved: false, notes: "" }));
+  cancel.addEventListener("click", () => void answer(box, { k: "plan", id: event.id, approved: false, notes: "" }));
   buttons.append(approve, cancel);
   box.append(buttons);
   return box;
 }
 function approvalBox(event) {
   const box = el("div", "box ask");
-  box.append(el("div", "box-head", event.label));
-  if (event.detail) box.append(el("div", "detail", event.detail));
+  const head = el("div", "box-head");
+  head.append(el("span", "head-text", event.label), el("span", "tag", "Approval"));
+  box.append(head);
+  if (event.detail) box.append(folded(event.detail, "Review action details", true));
   if (event.why) box.append(el("div", "why", event.why));
   if (event.pcOnly) {
-    box.append(el("div", "why", "This one can only be answered on the PC."));
+    box.append(el("div", "why pc-only", "This one can only be answered on the PC."));
     return box;
   }
   const buttons = el("div", "btns");
   const allow = el("button", "btn primary", "Allow");
   const deny = el("button", "btn", "Deny");
-  allow.addEventListener("click", () => void command({ k: "approval", id: event.id, approved: true }));
-  deny.addEventListener("click", () => void command({ k: "approval", id: event.id, approved: false }));
+  allow.type = deny.type = "button";
+  allow.addEventListener("click", () => void answer(box, { k: "approval", id: event.id, approved: true }));
+  deny.addEventListener("click", () => void answer(box, { k: "approval", id: event.id, approved: false }));
   buttons.append(allow, deny);
   box.append(buttons);
   return box;
 }
-function show(event) {
+function handleEvent(event) {
   switch (event.k) {
     case "hello":
       resetFeed();
       siteLine.textContent = event.site ? `Hospital PC \xB7 ${event.site}` : "Hospital PC";
       renderCards(event.cards);
       setWorking(event.working);
+      for (const item of event.events) handleEvent(item);
       return;
     case "site":
       siteLine.textContent = event.site ? `Hospital PC \xB7 ${event.site}` : "Hospital PC";
@@ -307,9 +684,20 @@ function show(event) {
     case "user":
       append(el("div", "me", event.text));
       return;
-    case "assistant":
-      append(el("div", "say", event.text));
+    case "assistant": {
+      const say = el("div", "say");
+      renderMarkdown(say, event.text);
+      if (event.text.length > 1400 || event.text.split("\n").length > 24) {
+        const details = el("details", "fold reply-fold");
+        const body = el("div", "fold-body");
+        body.append(say);
+        details.append(el("summary", "", "Show full reply"), body);
+        append(details);
+      } else {
+        append(say);
+      }
       return;
+    }
     case "note":
       append(el("div", "note", event.text));
       return;
@@ -320,24 +708,31 @@ function show(event) {
       let row = steps.get(event.id);
       if (!row) {
         row = el("div", "step");
+        row.append(el("span", "step-label"));
         steps.set(event.id, row);
         append(row);
       }
-      row.textContent = event.label;
+      row.querySelector(".step-label").textContent = event.label;
       row.classList.toggle("done", event.state === "done");
       row.classList.toggle("fail", event.state === "fail");
+      row.classList.toggle("compact", event.state !== "run");
+      row.setAttribute("aria-label", `${event.label}: ${event.state === "run" ? "working" : event.state === "done" ? "done" : "failed"}`);
       return;
     }
     case "plan": {
+      if (boxes.has(event.id)) return;
       const box = planBox(event);
       boxes.set(event.id, box);
       append(box);
+      updateComposer();
       return;
     }
     case "approval": {
+      if (boxes.has(event.id)) return;
       const box = approvalBox(event);
       boxes.set(event.id, box);
       append(box);
+      updateComposer();
       return;
     }
     case "settled":
@@ -347,44 +742,82 @@ function show(event) {
 }
 var channel = null;
 async function command(message) {
-  if (!channel?.isOpen) return;
-  await channel.send(message);
+  if (!canUseLink() || !channel?.isOpen) return false;
+  try {
+    await channel.send(message);
+    return channel.isOpen;
+  } catch {
+    return false;
+  }
+}
+async function sendDraft() {
+  const text = input.value.trim();
+  if (!text || working || sending || !canUseLink()) {
+    updateComposer();
+    return;
+  }
+  sending = true;
+  composerHint.classList.remove("send-error");
+  sendButton.disabled = true;
+  const sent = await command({ k: "send", text });
+  sending = false;
+  if (sent) {
+    input.value = "";
+    resizeComposer();
+  } else {
+    composerHint.classList.add("send-error");
+    composerHint.textContent = "Not sent. Your draft is kept; try again when connected.";
+  }
+  updateComposer();
 }
 async function main() {
   const pairing = loadPairing();
   if (!pairing) {
+    paired = false;
     feed.hidden = true;
-    must(".composer").hidden = true;
+    composer.hidden = true;
     unpaired.hidden = false;
-    conn.textContent = "Not paired";
+    renderConn();
     return;
   }
   channel = new RelayChannel(
     pairing,
     "phone",
-    (event) => show(event),
+    handleEvent,
     (next) => {
       status = next;
       renderConn();
-      if (next === "open") void command({ k: "hello" });
+      if (next === "open") {
+        updateCardStatus();
+        void command({ k: "hello" });
+      }
     }
   );
   await channel.connect();
 }
-sendButton.addEventListener("click", () => {
-  const text = input.value.trim();
-  if (!text || working) return;
-  void command({ k: "send", text });
-  input.value = "";
+input.addEventListener("input", () => {
+  composerHint.classList.remove("send-error");
+  resizeComposer();
+  updateComposer();
 });
+input.addEventListener("focus", () => {
+  setTimeout(() => input.scrollIntoView({ block: "nearest", behavior: "auto" }), 250);
+});
+sendButton.addEventListener("click", () => void sendDraft());
+stopButton.addEventListener("click", () => void command({ k: "stop" }));
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    sendButton.click();
+    void sendDraft();
   }
 });
-stopButton.addEventListener("click", () => void command({ k: "stop" }));
+window.addEventListener("resize", resizeComposer);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void command({ k: "hello" });
 });
+resizeComposer();
+updateComposer();
 void main();
+export {
+  handleEvent
+};

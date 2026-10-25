@@ -14,32 +14,46 @@
     <header class="top">
       <img class="logo" src="icon.svg" alt="" />
       <span class="name">Physio AI</span>
-      <span id="conn" class="conn">Connecting&hellip;</span>
+      <span id="conn" class="conn" role="status" aria-live="polite" aria-atomic="true">Connecting&hellip;</span>
     </header>
 
-    <main id="feed" class="feed">
-      <div id="intro" class="intro">
-        <p id="site" class="site"></p>
-        <div id="cards" class="cards"></div>
-      </div>
+    <main id="feed" class="feed" aria-label="Conversation with your PC">
+      <section id="intro" class="intro" aria-labelledby="intro-title">
+        <p id="site" class="site">Hospital PC</p>
+        <div class="welcome">
+          <p class="eyebrow">Phone remote</p>
+          <h1 id="intro-title">Start a task on your PC</h1>
+          <p>Choose a shortcut or describe what you need. The browser on your hospital PC does the work.</p>
+        </div>
+        <div class="shortcut-head">
+          <h2>Shortcuts</h2>
+          <span>Tap to start</span>
+        </div>
+        <div id="cards" class="cards" aria-live="polite"></div>
+        <p class="start-note">You can review plans and approvals here. Some sensitive actions must still be answered on the PC.</p>
+      </section>
     </main>
 
-    <div id="unpaired" class="unpaired" hidden>
-      <h1>Scan the code on your PC</h1>
+    <section id="unpaired" class="unpaired" hidden aria-labelledby="unpaired-title">
+      <h1 id="unpaired-title">Scan the code on your PC</h1>
       <p>
         Open Physio AI on the hospital PC, tap the phone button in the top bar, and scan the
         QR code with this phone's camera.
       </p>
-    </div>
+    </section>
 
     <footer class="composer">
-      <textarea id="input" rows="1" placeholder="Tell the PC what to do&hellip;"></textarea>
-      <button id="send" class="round send" aria-label="Send">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-      </button>
-      <button id="stop" class="round stop" aria-label="Stop" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>
-      </button>
+      <div class="composer-row">
+        <label class="sr-only" for="input">Message for your PC</label>
+        <textarea id="input" rows="1" placeholder="Tell the PC what to do…" aria-describedby="composer-hint" enterkeyhint="send" autocapitalize="sentences"></textarea>
+        <button id="send" class="round send" aria-label="Send message" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+        </button>
+        <button id="stop" class="round stop" aria-label="Stop current task" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>
+        </button>
+      </div>
+      <p id="composer-hint" class="composer-hint">Enter to send · Shift + Enter for a new line</p>
     </footer>
 
     <script type="module" src="phone.js"></script>
