@@ -423,3 +423,5 @@ summary:focus-visible {
 
 /* Card pictograms match the extension's. */
 .card-icon svg { display: block; }
+
+.target { padding: 7px 10px; border-radius: 10px; background: var(--accent-soft); color: var(--text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }

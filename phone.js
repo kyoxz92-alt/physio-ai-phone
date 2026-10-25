@@ -691,7 +691,9 @@ function planBox(event) {
   const notes = el("textarea", "notes");
   notes.value = event.notes;
   notes.setAttribute("aria-label", "Plan text to write");
-  box.append(head, el("div", "label", "Text to write \xB7 review and edit"), notes);
+  box.append(head);
+  if (event.target) box.append(el("div", "target", `Writing into: ${event.target}`));
+  box.append(el("div", "label", "Text to write \xB7 review and edit"), notes);
   if (event.assumed.length > 0) {
     box.append(el("div", "label", "Assumed \xB7 check these"));
     const chips = el("div", "chips");
