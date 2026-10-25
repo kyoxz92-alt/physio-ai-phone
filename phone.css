@@ -375,3 +375,14 @@ summary:focus-visible {
   *::before,
   *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Mode switch, usage line, new conversation. */
+.forget:disabled { opacity: 0.35; cursor: default; }
+.composer-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; }
+.mode-seg { display: inline-flex; padding: 2px; border-radius: 10px; background: var(--bg-soft); }
+.mode-opt { min-height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; }
+.mode-opt[aria-checked="true"] { border-color: var(--border); background: var(--raised); color: var(--text); font-weight: 600; }
+.mode-opt[data-mode="auto"][aria-checked="true"] { color: var(--accent); }
+.mode-opt:disabled { opacity: 0.5; }
+.mode-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.usage { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }

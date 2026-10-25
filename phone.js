@@ -1,4 +1,7 @@
 // src/shared/relay.ts
+function isPhoneMode(value) {
+  return value === "manual" || value === "auto";
+}
 function validPairing(value) {
   if (!value || typeof value !== "object") return null;
   const saved = value;
@@ -469,10 +472,14 @@ var sendButton = must("#send");
 var stopButton = must("#stop");
 var unpaired = must("#unpaired");
 var forgetButton = must("#forget");
+var newChatButton = must("#new-chat");
+var usageLine = must("#usage");
+var modeOptions = [...document.querySelectorAll("#mode-seg .mode-opt")];
 var working = false;
 var sending = false;
 var paired = true;
 var status = "connecting";
+var mode = "manual";
 var steps = /* @__PURE__ */ new Map();
 var boxes = /* @__PURE__ */ new Map();
 function loadPairing() {
@@ -527,6 +534,8 @@ function updateComposer() {
   sendButton.disabled = !sendable;
   stopButton.hidden = !working;
   stopButton.disabled = !online;
+  newChatButton.disabled = !online || working;
+  for (const option of modeOptions) option.disabled = !online;
   input.setAttribute("aria-disabled", String(!online));
   composer.classList.toggle("offline", !online);
   composer.classList.toggle("busy", online && working);
@@ -547,6 +556,10 @@ function renderConn() {
   conn.classList.toggle("offline", paired && status === "closed");
   conn.textContent = !paired ? "Not paired" : status === "open" ? working ? "Working" : "PC connected" : status === "connecting" ? "Connecting\u2026" : "Offline";
   updateComposer();
+}
+function setMode(next) {
+  mode = next;
+  for (const option of modeOptions) option.setAttribute("aria-checked", String(option.dataset.mode === next));
 }
 function setWorking(on) {
   working = on;
@@ -691,6 +704,8 @@ function handleEvent(event) {
       resetFeed();
       siteLine.textContent = event.site ? `Hospital PC \xB7 ${event.site}` : "Hospital PC";
       renderCards(event.cards);
+      if (isPhoneMode(event.mode)) setMode(event.mode);
+      usageLine.textContent = typeof event.usage === "string" ? event.usage : "";
       setWorking(event.working);
       for (const item of event.events) handleEvent(item);
       return;
@@ -702,6 +717,12 @@ function handleEvent(event) {
       return;
     case "working":
       setWorking(event.on);
+      return;
+    case "mode":
+      setMode(event.mode);
+      return;
+    case "usage":
+      usageLine.textContent = event.text;
       return;
     case "user":
       append(el("div", "me", event.text));
@@ -792,6 +813,19 @@ async function sendDraft() {
   }
   updateComposer();
 }
+for (const option of modeOptions) {
+  option.addEventListener("click", () => {
+    const next = option.dataset.mode;
+    if (!isPhoneMode(next) || next === mode) return;
+    if (next === "auto" && !confirm("Switch to Auto? The agent will run ordinary actions without asking. Complete, Sign and scripts still need the PC.")) return;
+    void command({ k: "mode", mode: next });
+  });
+}
+newChatButton.addEventListener("click", () => {
+  if (working || !canUseLink()) return;
+  if (!confirm("Start a new conversation? This clears the conversation on the PC too.")) return;
+  void command({ k: "new" });
+});
 forgetButton.addEventListener("click", () => {
   if (!confirm("Forget this PC? You will need to scan its QR code again.")) return;
   let cleared = true;
@@ -819,6 +853,7 @@ async function main() {
     return;
   }
   forgetButton.hidden = false;
+  newChatButton.hidden = false;
   channel = new RelayChannel(
     pairing,
     "phone",
