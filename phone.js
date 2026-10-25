@@ -1,4 +1,15 @@
 // src/shared/relay.ts
+function validPairing(value) {
+  if (!value || typeof value !== "object") return null;
+  const saved = value;
+  if (typeof saved.relayUrl !== "string" || typeof saved.relayKey !== "string" || typeof saved.room !== "string" || typeof saved.secret !== "string") return null;
+  return readPairing(`#${new URLSearchParams({
+    u: saved.relayUrl,
+    a: saved.relayKey,
+    r: saved.room,
+    k: saved.secret
+  })}`);
+}
 function readPairing(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const relayUrl = params.get("u") ?? "";
@@ -457,6 +468,7 @@ var composerHint = must("#composer-hint");
 var sendButton = must("#send");
 var stopButton = must("#stop");
 var unpaired = must("#unpaired");
+var forgetButton = must("#forget");
 var working = false;
 var sending = false;
 var paired = true;
@@ -466,17 +478,27 @@ var boxes = /* @__PURE__ */ new Map();
 function loadPairing() {
   const fromHash = readPairing(location.hash);
   if (fromHash) {
+    let durable = false;
     try {
-      sessionStorage.setItem(PAIRING_KEY, JSON.stringify(fromHash));
+      localStorage.setItem(PAIRING_KEY, JSON.stringify(fromHash));
+      durable = true;
+    } catch {
+    }
+    try {
+      if (durable) sessionStorage.removeItem(PAIRING_KEY);
+      else sessionStorage.setItem(PAIRING_KEY, JSON.stringify(fromHash));
     } catch {
     }
     history.replaceState(null, "", location.pathname);
     return fromHash;
   }
   try {
-    const saved = JSON.parse(sessionStorage.getItem(PAIRING_KEY) ?? "null");
-    if (!saved) return null;
-    return readPairing(`#${new URLSearchParams({ u: saved.relayUrl, a: saved.relayKey, r: saved.room, k: saved.secret })}`);
+    const saved = validPairing(JSON.parse(localStorage.getItem(PAIRING_KEY) ?? "null"));
+    if (saved) return saved;
+  } catch {
+  }
+  try {
+    return validPairing(JSON.parse(sessionStorage.getItem(PAIRING_KEY) ?? "null"));
   } catch {
     return null;
   }
@@ -770,6 +792,22 @@ async function sendDraft() {
   }
   updateComposer();
 }
+forgetButton.addEventListener("click", () => {
+  if (!confirm("Forget this PC? You will need to scan its QR code again.")) return;
+  let cleared = true;
+  try {
+    localStorage.removeItem(PAIRING_KEY);
+  } catch {
+    cleared = false;
+  }
+  try {
+    sessionStorage.removeItem(PAIRING_KEY);
+  } catch {
+    cleared = false;
+  }
+  if (cleared) location.reload();
+  else alert("This browser blocked access to saved pairing. Clear this site\u2019s data in browser settings.");
+});
 async function main() {
   const pairing = loadPairing();
   if (!pairing) {
@@ -780,6 +818,7 @@ async function main() {
     renderConn();
     return;
   }
+  forgetButton.hidden = false;
   channel = new RelayChannel(
     pairing,
     "phone",
@@ -819,5 +858,6 @@ resizeComposer();
 updateComposer();
 void main();
 export {
-  handleEvent
+  handleEvent,
+  loadPairing
 };
