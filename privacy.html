@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Physio AI privacy policy</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1c2430; --muted: #5b6574; --line: #d9dee5; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15191f; --fg: #e7ebf0; --muted: #a3adba; --line: #2c333d; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 6px; }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); font-size: 14px; }
+  ul { padding-left: 20px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Physio AI privacy policy</h1>
+  <p class="muted">Last updated 5 November 2026</p>
+
+  <p>Physio AI is a Chrome extension that helps one physiotherapist write clinical documentation in the
+  browser with an AI model of their choice. It is a personal tool. It has no advertising and no analytics.
+  The only account is the optional sync sign-in described below.</p>
+
+  <h2>What stays in your browser</h2>
+  <p>Settings, API keys, memory, skills, workflows, trusted sites, past chats and the plan history are
+  kept in Chrome's local extension storage on your own computer. Unless you turn on sync (below), they are
+  not uploaded anywhere by the extension. API keys are never synced. A backup file is made only when you
+  press Export, and it includes API keys or chats only if you tick those boxes.</p>
+
+  <h2>What is sent, and to whom</h2>
+  <ul>
+    <li><strong>The AI provider you choose</strong> (DeepSeek, Anthropic or ILMU) receives your
+    instructions and the parts of the open web page the agent reads to do the task, using your own API
+    key. Their own privacy policies apply to that data.</li>
+    <li><strong>Web pages and search</strong>: when you ask the agent to look something up, it fetches
+    public pages or DuckDuckGo results without your cookies.</li>
+    <li><strong>Phone link</strong> (only when you turn it on): messages between the panel and your
+    phone pass through a Supabase Realtime relay. Every message is encrypted on the device with a key
+    that is shared only through the QR code, so the relay sees encrypted data only. Nothing is stored
+    on the relay.</li>
+    <li><strong>Sync between PCs</strong> (only when you sign in and turn it on): model choices,
+    preferences, memory, skills, workflows, trusted sites and start cards, and past chats only if you
+    tick them separately (they are off by default), are stored in a Supabase database in Singapore so your
+    other computers can use them. Every item is encrypted on your computer (AES-256-GCM) with a key that is
+    itself locked by your sync passphrase; the passphrase is never stored or sent. The service sees your
+    sign-in email, item kinds, item IDs and times, but not the content. Synced chats are deleted from the
+    service after your chosen keep-days, and in any case after 31 days. "Delete my cloud data" in Settings
+    removes everything stored there.</li>
+    <li><strong>Built-in skill updates</strong>: once a day the extension downloads the latest signed
+    skills file (text instructions, no code) from the developer's GitHub Pages site and checks its digital
+    signature before using it. Nothing about you is sent except the ordinary web request. You can turn this
+    off in Settings.</li>
+  </ul>
+
+  <h2>Locked API keys</h2>
+  <p>A copy of the extension may carry the owner's API keys in a file locked with a passphrase
+  (AES-256-GCM, key derived with PBKDF2-SHA256). The passphrase is never stored or sent. Without it the
+  file cannot be read.</p>
+
+  <h2>What is never done</h2>
+  <ul>
+    <li>No data is sold or shared with third parties beyond those listed above.</li>
+    <li>No patient text is ever stored unencrypted outside your computer.</li>
+    <li>No data is used for advertising, credit decisions or anything unrelated to the tool's purpose.</li>
+    <li>No tracking, analytics or crash reporting.</li>
+  </ul>
+
+  <h2>Deleting your data</h2>
+  <p>Delete chats or history in Settings, or remove the extension from Chrome to delete everything it
+  stored on that computer. If you used sync, press "Delete my cloud data" in Settings → Privacy &amp; data
+  first to remove the encrypted copies from the sync service.</p>
+
+  <hr />
+  <p class="muted">Questions: contact the developer through the Chrome Web Store listing.</p>
+</main>
+</body>
+</html>
